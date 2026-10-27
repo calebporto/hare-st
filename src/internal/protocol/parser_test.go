@@ -1,6 +1,10 @@
 package protocol
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/calebportodev/golang/hare-st/src/internal/storage"
+)
 
 func TestParseRawRequest(t *testing.T) {
 	p := &Parser{}
@@ -13,7 +17,7 @@ func TestParseRawRequest(t *testing.T) {
 	})
 
 	t.Run("valid get command", func(t *testing.T) {
-		result, err := p.ParseRawRequest("get\nminhachave")
+		result, err := p.ParseRawRequest("get minhachave")
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -24,7 +28,7 @@ func TestParseRawRequest(t *testing.T) {
 	})
 
 	t.Run("valid put command", func(t *testing.T) {
-		result, err := p.ParseRawRequest("put\nminhachave\nint\n42")
+		result, err := p.ParseRawRequest("put minhachave int 42")
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -35,7 +39,7 @@ func TestParseRawRequest(t *testing.T) {
 	})
 
 	t.Run("invalid number of commands", func(t *testing.T) {
-		_, err := p.ParseRawRequest("put\nminhachave\nint")
+		_, err := p.ParseRawRequest("put minhachave int")
 		if err == nil {
 			t.Fatal("expected error for 3 commands, got nil")
 		}
@@ -49,7 +53,7 @@ func TestParseRawRequest(t *testing.T) {
 	})
 
 	t.Run("too many commands", func(t *testing.T) {
-		_, err := p.ParseRawRequest("put\nchave\nint\n42\nextra")
+		_, err := p.ParseRawRequest("put chave int 42 extra")
 		if err == nil {
 			t.Fatal("expected error for too many commands, got nil")
 		}
@@ -188,4 +192,166 @@ func generateString(char string, count int) string {
 		result += char
 	}
 	return result
+}
+
+func TestCleanRawRequest(t *testing.T) {
+	p := &Parser{}
+
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"trailing newline", "get chave\n", "get chave"},
+		{"trailing carriage return", "get chave\r\n", "get chave"},
+		{"surrounding spaces", "  get chave  \n", "get chave"},
+		{"no trailing characters", "get chave", "get chave"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := p.CleanRawRequest(c.input)
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if got != c.want {
+				t.Errorf("CleanRawRequest(%q) = %q, want %q", c.input, got, c.want)
+			}
+		})
+	}
+}
+
+func TestParsePutResponse(t *testing.T) {
+	p := &Parser{}
+	got, err := p.ParsePutResponse(ParsedRawRequest{})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if got != "status success" {
+		t.Errorf("ParsePutResponse() = %q, want %q", got, "status success")
+	}
+}
+
+func TestParseCleanResponse(t *testing.T) {
+	p := &Parser{}
+	got, err := p.ParseCleanResponse(ParsedRawRequest{})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if got != "status success" {
+		t.Errorf("ParseCleanResponse() = %q, want %q", got, "status success")
+	}
+}
+
+func TestParseGetResponse(t *testing.T) {
+	p := &Parser{}
+
+	t.Run("key not found", func(t *testing.T) {
+		got, err := p.ParseGetResponse(storage.StorageValue{}, false)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if got != "data: nil nil" {
+			t.Errorf("ParseGetResponse() = %q, want %q", got, "data: nil nil")
+		}
+	})
+
+	t.Run("key found", func(t *testing.T) {
+		got, err := p.ParseGetResponse(storage.StorageValue{DataType: "int", Data: "42"}, true)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		want := "data: int 42"
+		if got != want {
+			t.Errorf("ParseGetResponse() = %q, want %q", got, want)
+		}
+	})
+}
+
+func TestTrimFloatTrailingZeros(t *testing.T) {
+	p := &Parser{}
+
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"1.230000", "1.23"},
+		{"5.000000", "5"},
+		{"42", "42"},
+		{"-3.100000", "-3.1"},
+		{"0.000000", "0"},
+	}
+
+	for _, c := range cases {
+		got := p.trimFloatTrailingZeros(c.input)
+		if got != c.want {
+			t.Errorf("trimFloatTrailingZeros(%q) = %q, want %q", c.input, got, c.want)
+		}
+	}
+}
+
+func TestIsValidRequestEdgeCases(t *testing.T) {
+	p := &Parser{}
+
+	cases := []struct {
+		name     string
+		commands []string
+		wantOk   bool
+	}{
+		{"too few", []string{"get"}, false},
+		{"invalid number of commands", []string{"put", "key", "int"}, false},
+		{"too many", []string{"put", "key", "int", "1", "extra"}, false},
+		{"valid two commands", []string{"get", "key"}, true},
+		{"invalid verb", []string{"unknown", "key"}, false},
+		{"invalid key", []string{"get", "invalid key"}, false},
+		{"invalid type", []string{"put", "key", "unknown", "1"}, false},
+		{"invalid data", []string{"put", "key", "int", "abc"}, false},
+		{"valid four commands", []string{"put", "key", "int", "1"}, true},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			ok, err := p.isValidRequest(c.commands)
+			if ok != c.wantOk {
+				t.Errorf("isValidRequest(%v) = %v, want %v (err: %v)", c.commands, ok, c.wantOk, err)
+			}
+		})
+	}
+}
+
+func TestIsValidDataLengthRules(t *testing.T) {
+	p := &Parser{}
+
+	cases := []struct {
+		name     string
+		data     string
+		dataType string
+		wantOk   bool
+	}{
+		{"int max digits", "9223372036854775807", "int", true},
+		{"int too many digits", generateString("9", 20), "int", false},
+		{"negative int max digits", "-9223372036854775808", "int", true},
+		{"only sign", "-", "int", false},
+		{"too long data", generateString("a", 1025), "string", false},
+
+		{"float max total digits", generateString("9", 9) + "." + generateString("9", 6), "float", true},
+		{"float too many decimal digits", "1." + generateString("9", 7), "float", false},
+		{"float too many total digits", generateString("9", 10) + "." + generateString("9", 6), "float", false},
+		{"float missing decimal separator", "123", "float", false},
+		{"float multiple dots", "1.2.3", "float", false},
+		{"float missing integer part", ".5", "float", false},
+		{"float missing decimal part", "5.", "float", false},
+
+		{"char two-byte rune", "ç", "char", true},
+		{"char three-byte rune", "€", "char", false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			ok, err := p.isValidData(c.data, c.dataType)
+			if ok != c.wantOk {
+				t.Errorf("isValidData(%q, %q) = %v, want %v (err: %v)", c.data, c.dataType, ok, c.wantOk, err)
+			}
+		})
+	}
 }

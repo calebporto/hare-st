@@ -40,12 +40,24 @@ estágio atual é exploratório e educacional.
 - O tamanho máximo de cada chave será de 256 caracteres.
 - O dado deverá obrigatoriamente ser tipado.
 - Os tipos permitidos serão `char`, `string`, `int`, `float` e `boolean`.
+- Todo dado trafega e é armazenado internamente como `string`. O `{tipo}`
+  informado é apenas um metadado que descreve como o dado deve ser
+  interpretado, mas não altera a representação interna/no protocolo.
+- O tamanho máximo do dado recebido será de 1024 caracteres,
+  independentemente do tipo.
 - O tipo `char` permitirá apenas um caractere de 1 byte.
-- O tipo `string` permitirá strings de até 1Kb.
-- O tipo `float` terá 8 bytes (64 bits), equivalente ao `float64` nativo do
-  Go.
-- O tipo `int` terá 8 bytes (64 bits), equivalente ao `int` nativo do Go em
-  plataformas 64-bit.
+- O tipo `string` permitirá strings de até 1024 caracteres.
+- O tipo `float` deverá representar um valor compatível com `float64` nativo
+  do Go, com as seguintes restrições de formato:
+  - O dado terá no máximo 15 dígitos no total, sem contar o ponto `.` e um
+    eventual sinal de negativo (`-`).
+  - A parte decimal (à direita do ponto `.`) deverá ter até 6 dígitos.
+  - O separador decimal deverá obrigatoriamente ser um ponto (`.`).
+- O tipo `int` deverá representar um valor compatível com `int64`, com as
+  seguintes restrições de formato:
+  - O dado terá no máximo 19 dígitos, sem contar um eventual sinal de
+    negativo (`-`), correspondendo ao limite de um `int64`
+    (-9223372036854775808 a 9223372036854775807).
 - O tipo `boolean` aceitará apenas `true` ou `false`, em minúsculo,
   utilizando o tipo `bool` nativo do Go.
 - O servidor escutará na porta `8379`, que não é registrada pela IANA para

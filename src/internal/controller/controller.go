@@ -24,13 +24,15 @@ type Controller struct {
 
 func (c *Controller) HandleConnection() {
 	defer c.Conn.Close()
+	connection := uuid.NewV4().String()
+	slog.Info("Connection opened", "connection", connection)
+	
 	reader := bufio.NewReader(c.Conn)
-	conexao := uuid.NewV4().String()
 	for {
 		data, err := reader.ReadString('\n')
 		if err != nil {
 			if err.Error() == "EOF" {
-				slog.Info("Connection closed", "connection", conexao)
+				slog.Info("Connection closed", "connection", connection)
 				return
 			}
 			slog.Error("Error reading from connection", "error", err.Error())
@@ -60,7 +62,7 @@ func (c *Controller) HandleConnection() {
 				continue
 			}
 			slog.Error(response.Error, "data", response.Data, "message", response.Message)
-			c.Response(string(responseJsonBytes) + "\n")
+			c.Response(string(responseJsonBytes))
 			continue
 		}
 		// Handle valid request
@@ -76,10 +78,10 @@ func (c *Controller) HandleConnection() {
 		}
 
 		slog.Info("Request handled successfully", "request", parsedRequest, "response", response)
-		c.Response(response + "\n")
+		c.Response(response)
 	}
 }
 
 func (c *Controller) Response(r string) {
-	c.Conn.Write([]byte(r))
+	c.Conn.Write([]byte(r + "\n"))
 }
